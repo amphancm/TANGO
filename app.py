@@ -1,23 +1,25 @@
 import os
-import gradio as gr
 import gc
-import soundfile as sf
-import shutil
-import argparse
-from omegaconf import OmegaConf
-import random
-import numpy as np
-import librosa
-import emage.mertic  # noqa: F401 # somehow this must be imported, even though it is not used directly
-from decord import VideoReader
-from PIL import Image
 import cv2
-import subprocess
-import importlib
 import torch
-import torch.nn.functional as F
 import smplx
 import igraph
+import random
+import shutil
+import librosa
+import argparse
+import importlib
+import subprocess
+import numpy as np
+import gradio as gr
+import soundfile as sf
+import torch.nn.functional as F
+
+from PIL import Image
+from omegaconf import OmegaConf
+from decord import VideoReader
+
+import emage.mertic  # noqa: F401 # somehow this must be imported, even though it is not used directly
 
 # import emage
 from utils.video_io import save_videos_from_pil
@@ -46,8 +48,8 @@ def search_path_dp(graph, audio_low_np, audio_high_np, loop_penalty=0.1, top_k=1
     # Initialize the first time step
     start_nodes = [v for v in graph.vs if v["previous"] is None or v["previous"] == -1]
     for node in start_nodes:
-        node_index = node.index
-        motion_low = node["motion_low"]  # Shape: [C]
+        node_index  = node.index
+        motion_low  = node["motion_low"]  # Shape: [C]
         motion_high = node["motion_high"]  # Shape: [C]
 
         # Cost using cosine similarity
@@ -138,7 +140,7 @@ def search_path_dp(graph, audio_low_np, audio_high_np, loop_penalty=0.1, top_k=1
     top_k_paths_info = end_candidates[:top_k]
 
     # Reconstruct the paths
-    optimal_paths = []
+    optimal_paths     = []
     is_continue_lists = []
     for final_cost, node_index, tuple_index in top_k_paths_info:
         optimal_path_indices = []
@@ -176,7 +178,7 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
     create_graph = kwargs["create_graph"]
     torch.set_grad_enabled(False)
     pool_path = candidate_json_path.replace("data_json", "cached_graph").replace(".json", ".pkl")
-    graph = igraph.Graph.Read_Pickle(fname=pool_path)
+    graph     = igraph.Graph.Read_Pickle(fname=pool_path)
     # print(len(graph.vs))
 
     save_dir = os.path.join(test_path, f"retrieved_motions_{iteration}")
@@ -199,7 +201,7 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
 
     window_size = cfg.data.pose_length
     motion_high_all = []
-    motion_low_all = []
+    motion_low_all  = []
     for k, v in all_motions.items():
         motion_tensor = torch.from_numpy(v).float().to(device).unsqueeze(0)
         _, t, _ = motion_tensor.shape
@@ -207,16 +209,16 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
         if t >= window_size:
             num_chunks = t // window_size
             motion_high_list = []
-            motion_low_list = []
+            motion_low_list  = []
 
             for i in range(num_chunks):
                 start_idx = i * window_size
-                end_idx = start_idx + window_size
+                end_idx   = start_idx + window_size
                 motion_slice = motion_tensor[:, start_idx:end_idx, :]
 
                 motion_features = actual_model.get_motion_features(motion_slice)
 
-                motion_low = motion_features["motion_low"].cpu().numpy()
+                motion_low  = motion_features["motion_low"].cpu().numpy()
                 motion_high = motion_features["motion_cls"].unsqueeze(0).repeat(1, motion_low.shape[1], 1).cpu().numpy()
 
                 motion_high_list.append(motion_high[0])
@@ -228,8 +230,8 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
                 motion_slice = motion_tensor[:, start_idx:, :]
 
                 motion_features = actual_model.get_motion_features(motion_slice)
-                # motion_high = motion_features["motion_high_weight"].cpu().numpy()
-                motion_low = motion_features["motion_low"].cpu().numpy()
+                # motion_high   = motion_features["motion_high_weight"].cpu().numpy()
+                motion_low  = motion_features["motion_low"].cpu().numpy()
                 motion_high = motion_features["motion_cls"].unsqueeze(0).repeat(1, motion_low.shape[1], 1).cpu().numpy()
 
                 motion_high_list.append(motion_high[0][-remain_length:])
@@ -244,24 +246,24 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
                 [motion_tensor, torch.zeros((motion_tensor.shape[0], gap, motion_tensor.shape[2])).to(motion_tensor.device)], 1
             )
             motion_features = actual_model.get_motion_features(motion_slice)
-            # motion_high = motion_features["motion_high_weight"].cpu().numpy()
-            motion_low = motion_features["motion_low"].cpu().numpy()
+            # motion_high   = motion_features["motion_high_weight"].cpu().numpy()
+            motion_low  = motion_features["motion_low"].cpu().numpy()
             motion_high = motion_features["motion_cls"].unsqueeze(0).repeat(1, motion_low.shape[1], 1).cpu().numpy()
 
             motion_high_all.append(motion_high[0][:t])
             motion_low_all.append(motion_low[0][:t])
 
     motion_high_all = np.concatenate(motion_high_all, axis=0)
-    motion_low_all = np.concatenate(motion_low_all, axis=0)
+    motion_low_all  = np.concatenate(motion_low_all, axis=0)
     # print(motion_high_all.shape, motion_low_all.shape, len(graph.vs))
-    motion_low_all = motion_low_all / np.linalg.norm(motion_low_all, axis=1, keepdims=True)
+    motion_low_all  = motion_low_all / np.linalg.norm(motion_low_all, axis=1, keepdims=True)
     motion_high_all = motion_high_all / np.linalg.norm(motion_high_all, axis=1, keepdims=True)
     assert motion_high_all.shape[0] == len(graph.vs)
     assert motion_low_all.shape[0] == len(graph.vs)
 
     for i, node in enumerate(graph.vs):
         node["motion_high"] = motion_high_all[i]
-        node["motion_low"] = motion_low_all[i]
+        node["motion_low"]  = motion_low_all[i]
 
     graph = graph_pruning(graph)
     # for gradio, use a subgraph
@@ -276,10 +278,10 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
     idx = 0
     audio_waveform, sr = librosa.load(audio_path)
     audio_waveform = librosa.resample(audio_waveform, orig_sr=sr, target_sr=cfg.data.audio_sr)
-    audio_tensor = torch.from_numpy(audio_waveform).float().to(device).unsqueeze(0)
+    audio_tensor   = torch.from_numpy(audio_waveform).float().to(device).unsqueeze(0)
 
     target_length = audio_tensor.shape[1] // cfg.data.audio_sr * 30
-    window_size = int(cfg.data.audio_sr * (cfg.data.pose_length / 30))
+    window_size   = int(cfg.data.audio_sr * (cfg.data.pose_length / 30))
     _, t = audio_tensor.shape
     audio_low_list = []
     audio_high_list = []
@@ -299,7 +301,7 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
             audio_high = model_out_candidates["audio_cls"].unsqueeze(0).repeat(1, audio_low.shape[1], 1)
             # print(audio_low.shape, audio_high.shape)
 
-            audio_low = F.normalize(audio_low, dim=2)[0].cpu().numpy()
+            audio_low  = F.normalize(audio_low, dim=2)[0].cpu().numpy()
             audio_high = F.normalize(audio_high, dim=2)[0].cpu().numpy()
 
             audio_low_list.append(audio_low)
@@ -312,12 +314,12 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
             audio_slice = audio_tensor[:, start_idx:]
 
             model_out_candidates = actual_model.get_audio_features(audio_slice)
-            audio_low = model_out_candidates["audio_low"]
+            audio_low    = model_out_candidates["audio_low"]
             # audio_high = model_out_candidates["audio_high_weight"]
-            audio_high = model_out_candidates["audio_cls"].unsqueeze(0).repeat(1, audio_low.shape[1], 1)
+            audio_high   = model_out_candidates["audio_cls"].unsqueeze(0).repeat(1, audio_low.shape[1], 1)
 
             gap = target_length - np.concatenate(audio_low_list, axis=0).shape[1]
-            audio_low = F.normalize(audio_low, dim=2)[0][-gap:].cpu().numpy()
+            audio_low  = F.normalize(audio_low, dim=2)[0][-gap:].cpu().numpy()
             audio_high = F.normalize(audio_high, dim=2)[0][-gap:].cpu().numpy()
 
             # print(audio_low.shape, audio_high.shape)
@@ -330,7 +332,7 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
         audio_low = model_out_candidates["audio_low"]
         # audio_high = model_out_candidates["audio_high_weight"]
         audio_high = model_out_candidates["audio_cls"].unsqueeze(0).repeat(1, audio_low.shape[1], 1)
-        audio_low = F.normalize(audio_low, dim=2)[0].cpu().numpy()
+        audio_low  = F.normalize(audio_low, dim=2)[0].cpu().numpy()
         audio_high = F.normalize(audio_high, dim=2)[0].cpu().numpy()
         audio_low_list.append(audio_low)
         audio_high_list.append(audio_high)
@@ -340,7 +342,7 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
     path_list, is_continue_list = search_path_dp(graph, audio_low_all, audio_high_all, top_k=1, search_mode="both")
 
     res_motion = []
-    counter = 0
+    counter    = 0
     wav2lip_checkpoint_path = os.path.join(SCRIPT_PATH, "Wav2Lip/checkpoints/wav2lip_gan.pth")  # Update this path to your Wav2Lip checkpoint
     wav2lip_script_path = os.path.join(SCRIPT_PATH, "Wav2Lip/inference.py")
     for path, is_continue in zip(path_list, is_continue_list):
@@ -368,7 +370,7 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
             )
             video_temp_path = os.path.join(save_dir, f"audio_{idx}_retri_{counter}.mp4")
             video_reader = VideoReader(video_temp_path)
-            video_np = []
+            video_np     = []
             for i in range(len(video_reader)):
                 if i == 0:
                     continue
@@ -388,7 +390,7 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
         np.savez(os.path.join(save_dir, f"audio_{idx}_retri_{counter}.npz"), motion=res_motion_current)
 
         start_node = path[1].index
-        end_node = start_node + 100
+        end_node   = start_node + 100
 
     if create_graph:
         # time is limited if create graph, let us skip the second video
@@ -406,7 +408,7 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
     graph = graph_pruning(graph)
     path_list, is_continue_list = search_path_dp(graph, audio_low_all, audio_high_all, top_k=1, search_mode="both")
     res_motion = []
-    counter = 1
+    counter    = 1
     for path, is_continue in zip(path_list, is_continue_list):
         res_motion_current = path_visualization_v2(
             graph,
@@ -449,7 +451,7 @@ def test_fn(model, device, iteration, candidate_json_path, test_path, cfg, audio
 def init_class(module_name, class_name, config, **kwargs):
     module = importlib.import_module(module_name)
     model_class = getattr(module, class_name)
-    instance = model_class(config, **kwargs)
+    instance    = model_class(config, **kwargs)
     return instance
 
 
@@ -486,29 +488,29 @@ def save_first_10_seconds(video_path, output_path="./save_video.mp4", max_length
         return
 
     fps = int(cap.get(cv2.CAP_PROP_FPS))
-    original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    original_width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     original_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     # Calculate the aspect ratio and resize dimensions
     if original_width >= original_height:
-        new_width = max_length
+        new_width  = max_length
         new_height = int(original_height * (max_length / original_width))
     else:
         new_height = max_length
-        new_width = int(original_width * (max_length / original_height))
+        new_width  = int(original_width * (max_length / original_height))
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output_path.replace(".mp4", "_fps.mp4"), fourcc, fps, (new_width, new_height))
+    out    = cv2.VideoWriter(output_path.replace(".mp4", "_fps.mp4"), fourcc, fps, (new_width, new_height))
 
     frames_to_save = fps * 20
-    frame_count = 0
+    frame_count    = 0
 
     while cap.isOpened() and frame_count < frames_to_save:
         ret, frame = cap.read()
         if not ret:
             break
         # Resize the frame while keeping the aspect ratio
-        resized_frame = cv2.resize(frame, (new_width, new_height))
+        resized_frame   = cv2.resize(frame, (new_width, new_height))
         # resized_frame = frame
         out.write(resized_frame)
         frame_count += 1
@@ -573,8 +575,8 @@ def tango(audio_path, character_name, seed, create_graph=False, video_folder_pat
         save_first_10_seconds(character_name, os.path.join(video_folder_path, "save_video.mp4"))
 
     if create_graph:
-        data_save_path = os.path.join(OUTPUT_DIR, "tmpdata")
-        json_save_path = os.path.join(OUTPUT_DIR, "save_video.json")
+        data_save_path  = os.path.join(OUTPUT_DIR, "tmpdata")
+        json_save_path  = os.path.join(OUTPUT_DIR, "save_video.json")
         graph_save_path = os.path.join(OUTPUT_DIR, "save_video.pkl")
         cmd_smplx = f"cd ./SMPLer-X/ && python app.py --video_folder_path {video_folder_path} --data_save_path {data_save_path} --json_save_path {json_save_path} && cd .."
         subprocess.run(cmd_smplx, shell=True)
@@ -608,8 +610,8 @@ def tango(audio_path, character_name, seed, create_graph=False, video_folder_pat
     model.smplx_model = model.smplx_model.to(device)
 
     checkpoint_path = os.path.join(SCRIPT_PATH, "datasets/cached_ckpts/ckpt.pth")
-    checkpoint = torch.load(checkpoint_path)
-    state_dict = checkpoint["model_state_dict"]
+    checkpoint  = torch.load(checkpoint_path)
+    state_dict  = checkpoint["model_state_dict"]
     new_state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
     model.load_state_dict(new_state_dict, strict=False)
 
